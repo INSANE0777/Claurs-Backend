@@ -13,7 +13,7 @@ from app.config import get_settings
 from app.database import init_db, async_session_maker
 from app.indexer import refresh_indices, run_indexer
 from app.search import index_all
-from app.api import search, autocomplete, crawl, analytics, health
+from app.api import search, autocomplete, crawl, analytics, health, evaluation
 
 settings = get_settings()
 
@@ -99,6 +99,7 @@ app.include_router(autocomplete.router)
 app.include_router(crawl.router)
 app.include_router(analytics.router)
 app.include_router(health.router)
+app.include_router(evaluation.router)
 
 
 @app.get("/")
