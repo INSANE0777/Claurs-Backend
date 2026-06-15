@@ -13,5 +13,11 @@ class SearchEngine(ABC):
     ) -> List[Dict[str, Any]]:
         ...
 
+    @abstractmethod
+    def trace(
+        self, query: str, source_filter: Optional[str] = None, limit: int = 10
+    ) -> Dict[str, Any]:
+        ...
+
     def reset(self) -> None:
         pass

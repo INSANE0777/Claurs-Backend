@@ -92,6 +92,48 @@ class TFIDFEngine(SearchEngine):
             results.append({**doc, "score": round(score, 6)})
         return results
 
+    def trace(
+        self, query: str, source_filter: Optional[str] = None, limit: int = 10
+    ) -> Dict[str, Any]:
+        if not self.doc_vectors:
+            return {"query": query, "algo": "tfidf", "tokens": [], "documents": [], "ranked": []}
+        proc = process_text(query)
+        query_tokens = proc.get("tokens", [])
+        query_vec = self._vectorize(query_tokens)
+        documents = []
+        ranked = []
+        for idx, doc_vec in enumerate(self.doc_vectors):
+            doc = self.documents[idx]
+            if source_filter and doc.get("source") != source_filter:
+                continue
+            score = self._cosine(query_vec, doc_vec)
+            tokens = doc.get("tokens") or []
+            term_counts = Counter(tokens)
+            doc_vector_display = {term: round(weight, 6) for term, weight in doc_vec.items() if weight > 0}
+            documents.append({
+                "id": doc.get("id"),
+                "title": doc.get("title", ""),
+                "url": doc.get("url"),
+                "source": doc.get("source"),
+                "tokens": tokens[:50],
+                "term_counts": dict(term_counts.most_common(20)),
+                "vector": doc_vector_display,
+                "score": round(score, 6) if score > 0 else 0,
+            })
+            if score > 0:
+                ranked.append({**doc, "score": round(score, 6)})
+        ranked.sort(key=lambda x: x["score"], reverse=True)
+        return {
+            "query": query,
+            "algo": "tfidf",
+            "tokens": query_tokens,
+            "stemmed": proc.get("stemmed", []),
+            "query_vector": {term: round(weight, 6) for term, weight in query_vec.items()},
+            "idf": {term: round(weight, 6) for term, weight in self.idf.items() if term in query_tokens},
+            "documents": documents[:limit],
+            "ranked": ranked[:limit],
+        }
+
     def reset(self) -> None:
         self.documents = []
         self.tokenized_docs = []

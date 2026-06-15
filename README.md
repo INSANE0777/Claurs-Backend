@@ -55,6 +55,7 @@ docker run -p 8000:8000 clarus-backend
 |--------|------|-------------|
 | GET | `/health` | Health check + engine doc counts |
 | GET | `/search?q=...&algo=bm25&page=1&limit=10&source=...&live=1` | Paginated ranked results; `live=1` triggers a crawl fallback if results are sparse |
+| GET | `/search/trace?q=...&algo=bm25&limit=10` | Interactive trace of how the algorithm scores and ranks documents |
 | GET | `/autocomplete?prefix=...` | Trie-based suggestions |
 | POST | `/crawl` | Trigger manual crawl |
 | GET | `/analytics` | Usage metrics |

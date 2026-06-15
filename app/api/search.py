@@ -126,6 +126,22 @@ async def search(
     }
 
 
+@router.get("/search/trace")
+async def search_trace(
+    q: str = Query(..., min_length=1, description="Search query to trace"),
+    algo: str = Query(default=settings.SEARCH_DEFAULT_ALGO),
+    source: Optional[str] = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=50),
+):
+    algo = algo.lower()
+    if algo not in ALGORITHMS:
+        raise HTTPException(status_code=400, detail=f"Unknown algo '{algo}'. Use one of {ALGORITHMS}")
+    from app.search import trace
+
+    result = trace(q, algo=algo, source_filter=source, limit=limit)
+    return result
+
+
 async def _suggest_spelling(db: AsyncSession, q: str) -> Optional[str]:
     try:
         from difflib import get_close_matches
