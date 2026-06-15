@@ -10,6 +10,7 @@ from app.autocomplete import add_query
 from app.cache import cache_manager
 from app.config import get_settings
 from app.database import get_db
+from app.indexer import run_live_crawl
 from app.models import Document, SearchLog
 from app.search import get_engine
 from app.text_processor import build_snippet, process_text
@@ -21,6 +22,9 @@ settings = get_settings()
 ALGORITHMS = {"tfidf", "bm25", "semantic"}
 
 
+LIVE_CRAWL_THRESHOLD = 3
+
+
 @router.get("/search")
 async def search(
     q: str = Query(..., min_length=1, description="Search query"),
@@ -28,6 +32,7 @@ async def search(
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=settings.SEARCH_PAGE_SIZE, ge=1, le=100),
     source: Optional[str] = Query(default=None),
+    live: bool = Query(default=False, description="Trigger live crawl if results are sparse"),
     request: Request = None,
     db: AsyncSession = Depends(get_db),
 ):
@@ -37,10 +42,13 @@ async def search(
 
     start = time.perf_counter()
     offset = (page - 1) * limit
-    cache_key = cache_manager.make_key("search", q, algo, source, page, limit)
+    cache_key = cache_manager.make_key("search", q, algo, source, page, limit, live)
     cached = await cache_manager.get(cache_key)
 
     results = []
+    total = 0
+    crawled = None
+
     if cached:
         results = cached["results"]
         total = cached["total"]
@@ -61,7 +69,31 @@ async def search(
                 "score": r.get("score"),
                 "indexed_at": r.get("indexed_at").isoformat() if r.get("indexed_at") else None,
             })
-        await cache_manager.set(cache_key, {"results": results, "total": total})
+
+        # Live crawl fallback: if enabled and few/no results, crawl and re-search
+        if live and total < LIVE_CRAWL_THRESHOLD:
+            sources_to_crawl = [source] if source else settings.SOURCES_ENABLED
+            try:
+                crawled = await run_live_crawl(q, sources_to_crawl, max_depth=1)
+                # Re-run search after indexing new docs
+                raw_results = engine.search(q, source_filter=source, limit=limit, offset=offset)
+                total = len(engine.search(q, source_filter=source, limit=10000, offset=0)) if raw_results else 0
+                results = []
+                for r in raw_results:
+                    snippet = build_snippet(r.get("content_text", r.get("content_raw", "")), query_tokens)
+                    results.append({
+                        "id": r.get("id"),
+                        "title": r.get("title", "") or r.get("url", ""),
+                        "url": r.get("url"),
+                        "snippet": snippet,
+                        "source": r.get("source"),
+                        "score": r.get("score"),
+                        "indexed_at": r.get("indexed_at").isoformat() if r.get("indexed_at") else None,
+                    })
+            except Exception as e:
+                crawled = {"error": str(e)}
+
+        await cache_manager.set(cache_key, {"results": results, "total": total}, ttl=60 if live else None)
 
     response_time_ms = round((time.perf_counter() - start) * 1000, 2)
 
@@ -89,6 +121,8 @@ async def search(
         "results": results,
         "response_time_ms": response_time_ms,
         "suggestion": suggestion,
+        "live": live,
+        "crawl_info": crawled,
     }
 
 

@@ -101,3 +101,29 @@ async def refresh_indices() -> None:
     async with async_session_maker() as session:
         docs = await load_docs_from_db(session)
     index_all(docs)
+
+
+async def run_live_crawl(query: str, sources: List[str], max_depth: int = 1) -> Dict[str, Any]:
+    """Crawl selected sources for a live query and re-index the results."""
+    from app.crawler import Crawler
+
+    if not sources:
+        sources = settings.SOURCES_ENABLED
+
+    seeds = [{"source": s, "url": query} for s in sources if s in settings.SOURCES_ENABLED]
+    if not seeds:
+        return {"crawled_count": 0, "inserted_or_updated": 0}
+
+    crawler = Crawler(concurrency=5)
+    crawled = await crawler.crawl(seeds, max_depth=max_depth)
+
+    async with async_session_maker() as session:
+        inserted = await sync_documents_to_db(session, crawled)
+        docs = await load_docs_from_db(session)
+    index_all(docs)
+
+    return {
+        "crawled_count": len(crawled),
+        "inserted_or_updated": inserted,
+        "total_indexed": len(docs),
+    }
